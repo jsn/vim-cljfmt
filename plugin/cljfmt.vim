@@ -67,8 +67,14 @@ endfunction
 
 function! s:GetFormattedFile()
     let l:bufcontents = s:GetCurrentBufferContents()
+
     try
-        let l:cljfmt_output = fireplace#clj().Eval(s:GetReformatString(l:bufcontents)).out
+        let l:tmp = fireplace#clj().Eval(s:GetReformatString(l:bufcontents))
+
+        if !has_key(l:tmp, "out")
+            throw "Clojure: " . join(split(l:tmp.err, '\n'), ' ')
+        endif
+        let l:cljfmt_output = l:tmp.out
     catch /^Clojure:.*/
         throw "fmterr"
     catch
@@ -89,6 +95,10 @@ endfunction
 function! cljfmt#Format()
     let g:clj_fmt_required = s:RequireCljfmt()
 
+    if line('$') == 1 && getline(1) == ''
+        return
+    endif
+
     " If cljfmt.core has already been required, or was successfully imported
     " above
     if g:clj_fmt_required
@@ -98,7 +108,7 @@ function! cljfmt#Format()
         try
             call s:replaceBuffer(s:GetFormattedFile())
         catch "fmterr"
-            echoerr "Cljfmt: Failed to format file, likely due to a syntax error."
+           echoerr "Cljfmt: Failed to format file, likely due to a syntax error."
         endtry
 
         " restore our cursor/windows positions
@@ -138,16 +148,21 @@ function! s:CljfmtRange(bang, line1, line2, count, args) abort
     if !line1 || !line2
       return ''
     endif
-    let expr = getline(line1)[col1-1 : -1] . "\n"
-            \ . join(map(getline(line1+1, line2-1), 'v:val . "\n"'))
-            \ . getline(line2)[0 : col2-1]
+  endif
+  let expr = getline(line1)[col1-1 : -1] . "\n"
+              \ . join(map(getline(line1+1, line2-1), 'v:val . "\n"'))
+              \ . getline(line2)[0 : col2-1]
 
   let g:clj_fmt_required = s:RequireCljfmt()
   if g:clj_fmt_required
       let escaped_contents = substitute(expr, '"', '\\"', 'g')
       let l:preformatted = s:GetReformatString(escaped_contents)
 
-      let l:formatted_content = fireplace#clj().Eval(l:preformatted).out
+      let l:tmp = fireplace#clj().Eval(l:preformatted)
+      if !has_key(l:tmp, "out")
+          throw "Clojure: " . join(split(l:tmp.err, '\n'), ' ')
+      endif
+      let l:formatted_content = l:tmp.out
 
       let content = s:FilterOutput(split(l:formatted_content, "\n"), 0)
       exe line1.','.line2.'delete _'
